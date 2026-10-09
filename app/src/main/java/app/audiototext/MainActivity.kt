@@ -45,6 +45,10 @@ class MainActivity : Activity() {
     private lateinit var statusTv: TextView
     private lateinit var bar: ProgressBar
     private lateinit var listTv: TextView
+    private lateinit var percentTv: TextView
+    private lateinit var mainView: View
+    private lateinit var settingsView: View
+    private var onSettings = false
 
     private val langValues = listOf("hi", "hiroman", "en", "auto")
     private val langNames = listOf(
@@ -124,12 +128,28 @@ class MainActivity : Activity() {
     }
 
     private fun buildUi() {
+        // ---------- widgets that live on the More options screen (created once)
+        keyEt = edit("Paste your Gemini API key", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS)
+        rememberCb = check("Remember the key on this phone")
+        modelEt = edit("Model name", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS)
+        chunkEt = edit("Minutes", InputType.TYPE_CLASS_NUMBER)
+        gapEt = edit("Seconds", InputType.TYPE_CLASS_NUMBER)
+        langSp = Spinner(this)
+        val ad = ArrayAdapter(this, android.R.layout.simple_spinner_item, langNames)
+        ad.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        langSp.adapter = ad
+        langSp.minimumHeight = dp(52)
+        autoCb = check("When everything is finished, save the .txt file to Downloads automatically")
+        soundCb = check("Play a sound as each part and each file finishes")
+
+        // ---------- main screen
         val root = LinearLayout(this)
         root.orientation = LinearLayout.VERTICAL
         root.setPadding(dp(16), dp(12), dp(16), dp(28))
         val scroll = ScrollView(this)
+        scroll.isFillViewport = true
         scroll.addView(root)
-        setContentView(scroll)
+        mainView = scroll
 
         val head = TextView(this)
         head.text = "Audio to Text"
@@ -138,78 +158,122 @@ class MainActivity : Activity() {
         head.isAccessibilityHeading = true
         root.addView(head)
 
-        keyEt = edit("Paste your Gemini API key", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS)
-        root.addView(label("Gemini API key", keyEt))
-        root.addView(keyEt)
-        rememberCb = check("Remember the key on this phone")
-        root.addView(rememberCb)
-
-        modelEt = edit("Model name", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS)
-        root.addView(label("Model", modelEt))
-        root.addView(modelEt)
-        root.addView(button("Show models available for my key") { showModels() })
-
-        root.addView(label("Audio files"))
-        root.addView(button("Choose audio files or a ZIP") { pickFiles() })
+        val chooseBtn = button("Choose audio files or a ZIP") { pickFiles() }
+        chooseBtn.minimumHeight = dp(96)
+        chooseBtn.textSize = 20f
+        root.addView(chooseBtn)
         pickedTv = TextView(this)
         pickedTv.textSize = 16f
         pickedTv.text = "Nothing selected yet."
+        pickedTv.setPadding(0, dp(6), 0, dp(6))
         root.addView(pickedTv)
-
-        chunkEt = edit("Minutes", InputType.TYPE_CLASS_NUMBER)
-        root.addView(label("Minutes per piece (2 to 20)", chunkEt))
-        root.addView(chunkEt)
-        gapEt = edit("Seconds", InputType.TYPE_CLASS_NUMBER)
-        root.addView(label("Seconds to wait between requests (0 to 120)", gapEt))
-        root.addView(gapEt)
-
-        langSp = Spinner(this)
-        val ad = ArrayAdapter(this, android.R.layout.simple_spinner_item, langNames)
-        ad.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        langSp.adapter = ad
-        langSp.minimumHeight = dp(52)
-        root.addView(label("Language of the transcript", langSp))
-        root.addView(langSp)
-
-        autoCb = check("When everything is finished, save the .txt file to Downloads automatically")
-        root.addView(autoCb)
-        soundCb = check("Play a sound as each part and each file finishes")
-        soundCb.setOnClickListener { sp.edit().putBoolean("sound", soundCb.isChecked).apply() }
-        root.addView(soundCb)
 
         startBtn = button("Start") { startTranscription() }
         root.addView(startBtn)
         stopBtn = button("Stop") { startService(Intent(this, TranscribeService::class.java).setAction(TranscribeService.ACTION_STOP)) }
         root.addView(stopBtn)
-        saveBtn = button("Save text file to Downloads") { onSave() }
-        root.addView(saveBtn)
-        root.addView(button("Allow background running (battery setting)") { askBattery() })
-        root.addView(button("Clear saved progress") { onClear() })
 
-        root.addView(label("Status"))
         statusTv = TextView(this)
         statusTv.textSize = 18f
+        statusTv.setPadding(0, dp(12), 0, dp(4))
         statusTv.accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
         root.addView(statusTv)
+        percentTv = TextView(this)
+        percentTv.textSize = 20f
+        percentTv.setTypeface(null, Typeface.BOLD)
+        percentTv.text = "Progress: 0%"
+        root.addView(percentTv)
         bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal)
         bar.max = 100
-        root.addView(bar)
+        bar.minimumHeight = dp(16)
+        bar.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        root.addView(bar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(20)))
+
+        saveBtn = button("Save text file to Downloads") { onSave() }
+        root.addView(saveBtn)
+        root.addView(button("More options") { showSettings() })
 
         root.addView(label("Files"))
         listTv = TextView(this)
         listTv.textSize = 16f
         listTv.setTextIsSelectable(true)
         root.addView(listTv)
+
+        // ---------- More options screen
+        val sroot = LinearLayout(this)
+        sroot.orientation = LinearLayout.VERTICAL
+        sroot.setPadding(dp(16), dp(12), dp(16), dp(28))
+        val sscroll = ScrollView(this)
+        sscroll.addView(sroot)
+        settingsView = sscroll
+
+        val shead = TextView(this)
+        shead.text = "More options"
+        shead.textSize = 26f
+        shead.setTypeface(null, Typeface.BOLD)
+        shead.isAccessibilityHeading = true
+        sroot.addView(shead)
+
+        sroot.addView(label("Gemini API key", keyEt))
+        sroot.addView(keyEt)
+        sroot.addView(rememberCb)
+        sroot.addView(label("Model", modelEt))
+        sroot.addView(modelEt)
+        sroot.addView(button("Show models available for my key") { showModels() })
+        sroot.addView(label("Minutes per piece (2 to 20)", chunkEt))
+        sroot.addView(chunkEt)
+        sroot.addView(label("Seconds to wait between requests (0 to 120)", gapEt))
+        sroot.addView(gapEt)
+        sroot.addView(label("Language of the transcript", langSp))
+        sroot.addView(langSp)
+        sroot.addView(autoCb)
+        sroot.addView(soundCb)
+        sroot.addView(button("Allow background running (battery setting)") { askBattery() })
+        sroot.addView(button("Clear saved progress") { onClear() })
+        sroot.addView(button("Save") { saveSettings() })
+        sroot.addView(button("Cancel") { cancelSettings() })
+
+        showMain()
+    }
+
+    private fun showMain() {
+        onSettings = false
+        setContentView(mainView)
+    }
+
+    private fun showSettings() {
+        onSettings = true
+        setContentView(settingsView)
+    }
+
+    private fun saveSettings() {
+        val chunk = (chunkEt.text.toString().toIntOrNull() ?: 8).coerceIn(2, 20)
+        val gap = (gapEt.text.toString().toIntOrNull() ?: 8).coerceIn(0, 120)
+        savePrefs(chunk, gap)
+        chunkEt.setText(chunk.toString())
+        gapEt.setText(gap.toString())
+        toast("Saved.")
+        showMain()
+    }
+
+    private fun cancelSettings() {
+        loadPrefs()
+        showMain()
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (onSettings) cancelSettings() else super.onBackPressed()
     }
 
     private fun render(s: Snapshot) {
         statusTv.text = s.status
         bar.progress = s.percent
+        percentTv.text = "Progress: ${s.percent}%"
         listTv.text = s.lines
         startBtn.isEnabled = !s.running
         stopBtn.isEnabled = s.running
         saveBtn.isEnabled = File(filesDir, "combined.txt").exists()
-        soundCb.isChecked = sp.getBoolean("sound", true)
     }
 
     // ------------------------------------------------------------------ settings
