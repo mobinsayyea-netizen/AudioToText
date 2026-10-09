@@ -177,7 +177,7 @@ class MainActivity : Activity() {
         soundCb.setOnClickListener { sp.edit().putBoolean("sound", soundCb.isChecked).apply() }
         root.addView(soundCb)
 
-        startBtn = button("Start") { onStart() }
+        startBtn = button("Start") { startTranscription() }
         root.addView(startBtn)
         stopBtn = button("Stop") { startService(Intent(this, TranscribeService::class.java).setAction(TranscribeService.ACTION_STOP)) }
         root.addView(stopBtn)
@@ -282,7 +282,7 @@ class MainActivity : Activity() {
         pickedTv.announceForAccessibility(pickedTv.text)
     }
 
-    private fun onStart() {
+    private fun startTranscription() {
         val key = keyEt.text.toString().trim()
         val model = modelEt.text.toString().trim()
         if (key.isEmpty()) { toast("Enter your Gemini API key first."); return }
